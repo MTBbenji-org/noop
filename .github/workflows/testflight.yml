@@ -77,8 +77,35 @@ jobs:
                   "match AppStore com.mtbbenji.noop.widgets"
               }
 
+              project = "Strand.xcodeproj"
+
+              require "xcodeproj"
+              xcode_project = Xcodeproj::Project.open(project)
+
+              {
+                "NOOPiOS" => profiles.fetch("com.mtbbenji.noop"),
+                "NOOPiOSWidgets" => profiles.fetch("com.mtbbenji.noop.widgets")
+              }.each do |target_name, profile_name|
+                target = xcode_project.targets.find do |item|
+                  item.name == target_name
+                end
+
+                UI.user_error!("Target not found: #{target_name}") unless target
+
+                target.build_configurations.each do |config|
+                  next unless config.name == "Release"
+
+                  config.build_settings["DEVELOPMENT_TEAM"] = ENV.fetch("TEAMID")
+                  config.build_settings["CODE_SIGN_STYLE"] = "Manual"
+                  config.build_settings["CODE_SIGN_IDENTITY"] = "Apple Distribution"
+                  config.build_settings["PROVISIONING_PROFILE_SPECIFIER"] = profile_name
+                end
+              end
+
+              xcode_project.save
+
               build_app(
-                project: "Strand.xcodeproj",
+                project: project,
                 scheme: "NOOPiOS",
                 configuration: "Release",
                 export_method: "app-store",
@@ -87,8 +114,6 @@ jobs:
                 destination: "generic/platform=iOS",
                 xcargs: [
                   "DEVELOPMENT_TEAM=#{ENV.fetch('TEAMID')}",
-                  "CODE_SIGN_STYLE=Manual",
-                  "CODE_SIGN_IDENTITY='Apple Distribution'",
                   "CURRENT_PROJECT_VERSION=#{ENV.fetch('BUILD_NUMBER')}"
                 ].join(" "),
                 export_options: {
