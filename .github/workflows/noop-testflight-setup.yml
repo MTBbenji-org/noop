@@ -1,0 +1,61 @@
+
+name: NOOP TestFlight Setup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provisioning:
+    runs-on: macos-26
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Fastlane
+        run: gem install fastlane --no-document
+
+      - name: Update NOOP provisioning profiles
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
+          FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
+          FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
+        run: |
+          mkdir -p fastlane
+
+          cat > fastlane/Fastfile <<'RUBY'
+          default_platform(:ios)
+
+          platform :ios do
+            lane :provision_noop do
+              api_key = app_store_connect_api_key(
+                key_id: ENV.fetch("FASTLANE_KEY_ID"),
+                issuer_id: ENV.fetch("FASTLANE_ISSUER_ID"),
+                key_content: ENV.fetch("FASTLANE_KEY")
+              )
+
+              match(
+                type: "appstore",
+                git_url: "https://github.com/MTBbenji-org/Match-Secrets.git",
+                git_basic_authorization: Base64.strict_encode64(
+                  "x-access-token:#{ENV.fetch('GH_PAT')}"
+                ),
+                api_key: api_key,
+                app_identifier: [
+                  "com.mtbbenji.noop",
+                  "com.mtbbenji.noop.widgets"
+                ],
+                readonly: false,
+                force: true
+              )
+            end
+          end
+          RUBY
+
+          fastlane ios provision_noop
