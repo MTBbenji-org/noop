@@ -77,7 +77,7 @@ jobs:
                   "match AppStore com.mtbbenji.noop.widgets"
               }
 
-              project = "Strand.xcodeproj"
+              project = File.expand_path("../Strand.xcodeproj", __dir__)
 
               require "xcodeproj"
               xcode_project = Xcodeproj::Project.open(project)
