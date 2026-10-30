@@ -1,5 +1,5 @@
 
-name: NOOP TestFlight Setup
+name: NOOP TestFlight
 
 on:
   workflow_dispatch:
@@ -8,21 +8,38 @@ permissions:
   contents: read
 
 jobs:
-  provisioning:
-    name: Create NOOP provisioning profiles
-    runs-on: macos-15
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
 
     steps:
-      - name: Install Fastlane
-        run: gem install fastlane --no-document
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Create provisioning profiles
+      - name: Install tools
+        run: |
+          brew install xcodegen
+          gem install fastlane --no-document
+
+      - name: Prepare Xcode project
+        env:
+          TEAMID: ${{ secrets.TEAMID }}
+        run: |
+          cat > Config/BundleIdSecrets.xcconfig <<EOF
+          DEVELOPMENT_TEAM = ${TEAMID}
+          EOF
+
+          xcodegen generate
+
+      - name: Sign, build and upload
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           FASTLANE_KEY_ID: ${{ secrets.FASTLANE_KEY_ID }}
           FASTLANE_ISSUER_ID: ${{ secrets.FASTLANE_ISSUER_ID }}
           FASTLANE_KEY: ${{ secrets.FASTLANE_KEY }}
+          TEAMID: ${{ secrets.TEAMID }}
+          BUILD_NUMBER: ${{ github.run_number }}
         run: |
           mkdir -p fastlane
 
@@ -30,7 +47,7 @@ jobs:
           default_platform(:ios)
 
           platform :ios do
-            lane :provision_noop do
+            lane :testflight_noop do
               setup_ci
 
               api_key = app_store_connect_api_key(
@@ -50,11 +67,45 @@ jobs:
                   "com.mtbbenji.noop",
                   "com.mtbbenji.noop.widgets"
                 ],
-                readonly: false,
-                force: false
+                readonly: true
+              )
+
+              profiles = {
+                "com.mtbbenji.noop" =>
+                  "match AppStore com.mtbbenji.noop",
+                "com.mtbbenji.noop.widgets" =>
+                  "match AppStore com.mtbbenji.noop.widgets"
+              }
+
+              build_app(
+                project: "Strand.xcodeproj",
+                scheme: "NOOPiOS",
+                configuration: "Release",
+                export_method: "app-store",
+                output_directory: "build",
+                output_name: "NOOP.ipa",
+                destination: "generic/platform=iOS",
+                xcargs: [
+                  "DEVELOPMENT_TEAM=#{ENV.fetch('TEAMID')}",
+                  "CODE_SIGN_STYLE=Manual",
+                  "CODE_SIGN_IDENTITY='Apple Distribution'",
+                  "CURRENT_PROJECT_VERSION=#{ENV.fetch('BUILD_NUMBER')}"
+                ].join(" "),
+                export_options: {
+                  method: "app-store",
+                  signingStyle: "manual",
+                  teamID: ENV.fetch("TEAMID"),
+                  provisioningProfiles: profiles
+                }
+              )
+
+              upload_to_testflight(
+                api_key: api_key,
+                ipa: "build/NOOP.ipa",
+                skip_waiting_for_build_processing: true
               )
             end
           end
           RUBY
 
-          fastlane ios provision_noop
+          fastlane ios testflight_noop
